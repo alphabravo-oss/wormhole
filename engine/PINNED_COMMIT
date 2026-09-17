@@ -1,0 +1,7 @@
+restic https://github.com/restic/restic.git
+commit ba802d42b7294c98b62c16d1157ea3e80820c019
+
+Wormhole changes:
+- exact NUL-delimited restore path lists (--include-file-raw)
+- portable metadata comparison (--metadata-portable)
+- workflow-wide exclusive repository lease (wormhole-lock)

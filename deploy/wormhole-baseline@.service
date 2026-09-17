@@ -1,0 +1,9 @@
+[Unit]
+Description=Record Wormhole baseline for %i
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/run/wormhole/%i.env
+ExecStart=/usr/local/bin/wormhole baseline create --environment-id %i

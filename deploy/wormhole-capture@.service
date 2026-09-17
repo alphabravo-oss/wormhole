@@ -1,0 +1,9 @@
+[Unit]
+Description=Capture Wormhole recovery point for %i
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/run/wormhole/%i.env
+ExecStart=/usr/local/bin/wormhole capture run --environment-id %i --leave-stopped

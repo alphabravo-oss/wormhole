@@ -1,0 +1,10 @@
+[Unit]
+Description=Restore Wormhole recovery point for %i
+Wants=network-online.target
+After=network-online.target
+Before=multi-user.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/run/wormhole/%i.env
+ExecStart=/usr/local/bin/wormhole restore apply --environment-id %i --source-fenced

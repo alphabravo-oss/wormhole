@@ -1,0 +1,18 @@
+# Build and test output
+/bin/
+/artifacts/
+/coverage.out
+/*.prof
+
+# Local credentials
+/.env
+/.env.local
+/tests/*.env
+/tests/*.secrets
+
+# Editor and OS metadata
+/.idea/
+/.vscode/
+.DS_Store
+*.swp
+*.swo
