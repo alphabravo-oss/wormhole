@@ -105,15 +105,19 @@ storage. “Current build” means the present `wormhole.18` compatibility stamp
 | --- | --- |
 | Ubuntu 24.04 LTS | Current build: nginx, Python venv/package, Node/npm, compiled Go, PostgreSQL with live writer, SQLite, Docker image/container/volume/writable layer, ext4 volume, reboot, continued writes, recapture, and second fresh restore |
 | Fedora 44 | Current build: generic lifecycle plus SELinux Permissive→Enforcing, reboot, recapture, and second fresh restore |
+| Debian 12 | Earlier development build: generic lifecycle, continued-write validation, and recapture |
+| Rocky Linux 10 | Earlier development build: generic lifecycle, continued-write validation, and recapture |
 | AlmaLinux 10 | Earlier development build: generic lifecycle and attached XFS volume |
 | CentOS Stream 10 | Earlier development build: generic lifecycle |
 | openSUSE 16 | Earlier development build: generic lifecycle |
 
 The dpkg/APT, RPM/DNF, and RPM/Zypper paths are implemented, but that does not
-make every release in those families qualified. Debian, Rocky, other Ubuntu,
-Fedora, AlmaLinux, and CentOS versions still need a completed current-build
-matrix. See [Validation and tested systems](docs/testing.md) for exact scenarios
-and remaining coverage.
+make every release in those families qualified. Seven OS images have completed
+a cloud lifecycle; only Ubuntu 24.04 and Fedora 44 have completed it on the
+current build. Other releases, plus current-build reruns of the five earlier
+results, still need a completed matrix. See
+[Validation and tested systems](docs/testing.md) for exact scenarios and
+remaining coverage.
 
 ## Important boundaries
 

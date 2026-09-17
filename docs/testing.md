@@ -22,14 +22,16 @@ S3-compatible object storage on 2026-09-17.
 | --- | --- | --- |
 | Ubuntu 24.04 LTS | Current build | Three-VM lifecycle; nginx; SQLite; Python venv and locally installed package; Node/npm local dependency; compiled Go program; PostgreSQL with active writer and exact logical-data checksum; Docker image, running container, named volume, and writable layer; ext4 attached volume; metadata edge cases; reboot; continued writes; recapture; second fresh restore |
 | Fedora 44 | Current build | Three-VM generic lifecycle; package/account/service/firewall/sysctl/module fixtures; SELinux Permissive→Enforcing runtime and persistent configuration; reboot; continued writes; recapture; second fresh restore |
+| Debian 12 | Earlier development build | Fresh-target generic lifecycle; SQLite and continuous writer; metadata, package, account, and service state; source-fence and target-drift rejection; continued-write validation and recapture |
+| Rocky Linux 10 | Earlier development build | Fresh-target generic lifecycle; SQLite and continuous writer; metadata, package, account, and service state; source-fence and target-drift rejection; continued-write validation and recapture |
 | AlmaLinux 10 | Earlier development build | Three-VM generic lifecycle and attached XFS corpus |
 | CentOS Stream 10 | Earlier development build | Three-VM generic lifecycle |
 | openSUSE 16 | Earlier development build | Three-VM generic lifecycle |
 
-The live Hetzner catalog also exposed AlmaLinux 8/9, CentOS Stream 9, Debian
-12/13, Fedora 43, Rocky 8/9/10, and Ubuntu 22.04/26.04. A final all-version run
-was started and intentionally stopped before any of those images completed, so
-they are not listed as passed.
+The live Hetzner catalog also exposed AlmaLinux 8/9, CentOS Stream 9, Debian 13,
+Fedora 43, Rocky 8/9, and Ubuntu 22.04/26.04. A final all-version run was started
+and intentionally stopped: AlmaLinux 8, CentOS Stream 9, and Fedora 43 were
+provisioned but did not complete, and the other listed images were not reached.
 
 Package inventory and mutation paths exist for dpkg/APT, RPM/DNF, and
 RPM/Zypper. That implementation coverage must not be confused with release-by-

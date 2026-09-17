@@ -18,10 +18,11 @@ validates it independently, performs continued writes, recaptures, and restores
 onto a third VM. Current-build Ubuntu 24.04 coverage includes nginx, SQLite,
 Python, Node, Go, PostgreSQL, Docker, and ext4. Current-build Fedora 44 coverage
 includes a Permissive-to-Enforcing SELinux transition. Development builds also
-completed AlmaLinux 10 with XFS, CentOS Stream 10, and openSUSE 16. Interruption,
-repository corruption/repair, live-lock, bad-credential, target-drift,
-source-fence, missing/wrong/undersized-volume, and hostile-path cases have been
-exercised. Exact evidence is tracked in [docs/testing.md](docs/testing.md).
+completed Debian 12, Rocky Linux 10, AlmaLinux 10 with XFS, CentOS Stream 10,
+and openSUSE 16. Interruption, repository corruption/repair, live-lock,
+bad-credential, target-drift, source-fence, missing/wrong/undersized-volume, and
+hostile-path cases have been exercised. Exact evidence is tracked in
+[docs/testing.md](docs/testing.md).
 
 That validates the core mechanism, not the full product promise. Remaining
 release blockers are:
