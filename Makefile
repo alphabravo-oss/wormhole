@@ -2,8 +2,8 @@
 
 build:
 	mkdir -p bin
-	cd engine/restic && go build -o ../../bin/restic ./cmd/restic
-	go build -o bin/wormhole ./cmd/wormhole
+	cd engine/restic && CGO_ENABLED=0 go build -o ../../bin/restic ./cmd/restic
+	CGO_ENABLED=0 go build -o bin/wormhole ./cmd/wormhole
 
 test:
 	go test ./...

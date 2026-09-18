@@ -403,12 +403,15 @@ func restore(ctx context.Context, common commonFlags, manifestRef string, source
 	if err := checkStorageRequirements(manifest.StorageRequirements); err != nil {
 		return err
 	}
+	jobPath := filepath.Join(common.stateDir, "jobs", "restore-"+manifest.CaptureID+".json")
+	var previous Job
+	resuming := readJSON(jobPath, &previous) == nil && previous.CaptureID == manifest.CaptureID && previous.Phase != "preflight" && previous.Status != "complete"
 	targetFirewall, err := firewallState(ctx)
 	if err != nil {
 		return err
 	}
-	if manifest.CapturedFirewall != manifest.BaselineFirewall && targetFirewall != manifest.BaselineFirewall && targetFirewall != manifest.CapturedFirewall {
-		return errors.New("target_firewall_baseline_mismatch")
+	if err := validateTargetFirewall(manifest.BaselineFirewall, manifest.CapturedFirewall, targetFirewall, resuming); err != nil {
+		return err
 	}
 	targetSysctls, err := sysctlInventory(ctx)
 	if err != nil {
@@ -442,12 +445,9 @@ func restore(ctx context.Context, common commonFlags, manifestRef string, source
 	if err != nil {
 		return err
 	}
-	jobPath := filepath.Join(common.stateDir, "jobs", "restore-"+manifest.CaptureID+".json")
 	job := Job{ID: "restore-" + manifest.CaptureID, Kind: "restore", Status: "running", Phase: "preflight", StartedAt: time.Now().UTC(), CaptureID: manifest.CaptureID, SnapshotID: manifest.CaptureSnapshotID, TargetHostBefore: hostBefore}
-	resuming := false
-	var previous Job
-	if readJSON(jobPath, &previous) == nil && previous.CaptureID == manifest.CaptureID && previous.Phase != "preflight" && previous.Status != "complete" {
-		job, resuming = previous, true
+	if resuming {
+		job = previous
 		job.Status, job.Error = "running", ""
 	}
 	if err := writeJSONAtomic(jobPath, job, 0600); err != nil {
@@ -681,6 +681,13 @@ func restore(ctx context.Context, common commonFlags, manifestRef string, source
 		"snapshot_id": manifest.CaptureSnapshotID, "verified_snapshot_id": verification.SnapshotID,
 		"restored_paths": len(paths), "host_identity_preserved": true,
 	})
+}
+
+func validateTargetFirewall(baseline, captured, target FirewallState, resuming bool) error {
+	if !resuming && captured != baseline && target != baseline && target != captured {
+		return errors.New("target_firewall_baseline_mismatch")
+	}
+	return nil
 }
 
 func commitRestoredBaseline(baselinePath string, candidate Baseline) error {
@@ -968,13 +975,46 @@ func freezeUserSlice(ctx context.Context) bool {
 	if strings.Contains(string(cgroup), "user.slice") {
 		return false
 	}
+	if unit := currentSystemdUnit(); unit != "" {
+		if err := scheduleUserSliceThaw(ctx, unit); err != nil {
+			return false
+		}
+	}
 	_, err := commandOutput(ctx, "systemctl", "freeze", "user.slice")
 	return err == nil
 }
 
 func thawUserSlice(ctx context.Context) error {
-	_, err := commandOutput(ctx, "systemctl", "thaw", "user.slice")
+	if currentSystemdUnit() != "" {
+		return nil // scheduleUserSliceThaw owns this thaw.
+	}
+	_, userErr := commandOutput(ctx, "systemctl", "thaw", "user.slice")
+	_, sessionErr := commandOutput(ctx, "systemctl", "thaw", "session-*.scope")
+	return errors.Join(userErr, sessionErr)
+}
+
+func scheduleUserSliceThaw(ctx context.Context, unit string) error {
+	// EL systemd can refreeze child scopes while the calling unit exits.
+	script := `while state=$(systemctl show --property=ActiveState --value "$1" 2>/dev/null); do case "$state" in inactive|failed) break;; esac; sleep 1; done; systemctl thaw user.slice session-*.scope`
+	_, err := commandOutput(ctx, "systemd-run", "--quiet", "--collect", fmt.Sprintf("--unit=wormhole-thaw-sessions-%d", os.Getpid()), "/bin/sh", "-c", script, "sh", unit)
 	return err
+}
+
+func currentSystemdUnit() string {
+	cgroup, _ := os.ReadFile("/proc/self/cgroup")
+	return systemdUnit(cgroup)
+}
+
+func systemdUnit(cgroup []byte) string {
+	for _, line := range strings.Split(string(cgroup), "\n") {
+		parts := strings.Split(line, "/")
+		for i := len(parts) - 1; i >= 0; i-- {
+			if strings.HasSuffix(parts[i], ".service") || strings.HasSuffix(parts[i], ".scope") {
+				return parts[i]
+			}
+		}
+	}
+	return ""
 }
 
 func newID() string {

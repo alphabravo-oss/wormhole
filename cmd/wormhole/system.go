@@ -336,7 +336,12 @@ func sysctlInventory(ctx context.Context) (map[string]string, error) {
 func portableSysctl(name string) bool {
 	name = filepath.ToSlash(name)
 	if name == "kernel/hostname" || name == "kernel/domainname" || name == "kernel/ns_last_pid" ||
-		name == "net/ipv4/tcp_fastopen_key" || name == "vm/admin_reserve_kbytes" || name == "vm/user_reserve_kbytes" {
+		name == "kernel/threads-max" || name == "net/ipv4/tcp_fastopen_key" ||
+		name == "net/ipv4/tcp_mem" || name == "net/ipv4/tcp_rmem" || name == "net/ipv4/tcp_wmem" || name == "net/ipv4/udp_mem" ||
+		name == "vm/admin_reserve_kbytes" || name == "vm/user_reserve_kbytes" {
+		return false
+	}
+	if strings.HasPrefix(name, "kernel/sched_domain/") || strings.HasPrefix(name, "user/max_") && strings.HasSuffix(name, "_namespaces") {
 		return false
 	}
 	parts := strings.Split(name, "/")
@@ -359,12 +364,8 @@ func sysctlChanges(before, after map[string]string) []SysctlChange {
 
 func validateSysctlChanges(changes []SysctlChange, current map[string]string) error {
 	for _, change := range changes {
-		value, exists := current[change.Name]
-		if !exists {
+		if _, exists := current[change.Name]; !exists {
 			return fmt.Errorf("sysctl_missing: %s", change.Name)
-		}
-		if value != change.Before && value != change.After {
-			return fmt.Errorf("sysctl_baseline_mismatch: %s", change.Name)
 		}
 	}
 	return nil
@@ -1160,23 +1161,65 @@ func applyTextFileChanges(changes []TextFileChange, allowed []string, baselineHo
 		} else if change.AfterExists {
 			file.Mode, file.UID, file.GID = change.Mode, change.UID, change.GID
 		}
-		for _, line := range change.Removed {
-			if preserveTargetLine(change.Path, line, baselineHost) {
-				continue
-			}
-			file.Lines = removeOneLine(file.Lines, translateHostLine(change.Path, line, baselineHost, targetHost))
+		cloudTemplate := ""
+		if change.Path == "/etc/hosts" {
+			cloudTemplate = cloudInitHostsTemplate(file.Lines, "/etc/cloud/templates")
 		}
-		for _, line := range change.Added {
-			line = translateHostLine(change.Path, line, sourceHost, targetHost)
-			if !slices.Contains(file.Lines, line) {
-				file.Lines = append(file.Lines, line)
-			}
-		}
+		file.Lines = applyTextLineChanges(file.Lines, change, baselineHost, sourceHost, targetHost)
 		if err := writeTextFile(change.Path, file); err != nil {
 			return err
 		}
+		if cloudTemplate != "" {
+			if err := applyCloudInitHostsTemplate(cloudTemplate, change, baselineHost, sourceHost, targetHost); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+func applyTextLineChanges(lines []string, change TextFileChange, baselineHost, sourceHost, targetHost HostIdentity) []string {
+	for _, line := range change.Removed {
+		if !preserveTargetLine(change.Path, line, baselineHost) {
+			lines = removeOneLine(lines, translateHostLine(change.Path, line, baselineHost, targetHost))
+		}
+	}
+	for _, line := range change.Added {
+		line = translateHostLine(change.Path, line, sourceHost, targetHost)
+		if !slices.Contains(lines, line) {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+func cloudInitHostsTemplate(lines []string, dir string) string {
+	prefix := filepath.Join(dir, "hosts")
+	for _, line := range lines {
+		start := strings.Index(line, prefix)
+		if start < 0 {
+			continue
+		}
+		path := line[start:]
+		end := strings.Index(path, ".tmpl")
+		if end >= 0 {
+			path = filepath.Clean(path[:end+len(".tmpl")])
+			if filepath.Dir(path) == filepath.Clean(dir) {
+				return path
+			}
+		}
+	}
+	return ""
+}
+
+func applyCloudInitHostsTemplate(path string, change TextFileChange, baselineHost, sourceHost, targetHost HostIdentity) error {
+	files, err := textFileInventory([]string{path})
+	if err != nil {
+		return err
+	}
+	file := files[path]
+	file.Lines = applyTextLineChanges(file.Lines, change, baselineHost, sourceHost, targetHost)
+	return writeTextFile(path, file)
 }
 
 func preserveTargetLine(path, line string, source HostIdentity) bool {

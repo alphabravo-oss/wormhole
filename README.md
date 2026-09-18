@@ -5,10 +5,10 @@ fresh compatible VM. It preserves the replacement VM's network, SSH access, and
 provider identity while restoring the packages, users, files, services, and
 application data created in the lab.
 
-> **Status:** development preview. The core lifecycle has passed destructive
-> Hetzner tests, including source deletion, fresh-target restore, reboot,
-> continued writes, recapture, and a second fresh restore. It is not yet
-> qualified for production or cross-provider recovery.
+> **Status:** development preview. The core lifecycle has passed Hetzner tests
+> across 16 Linux images, including source deletion, fresh-target restore,
+> reboot, continued writes, recapture, and a second fresh restore. It is not
+> yet qualified for production or cross-provider recovery.
 
 ## Why this exists
 
@@ -33,13 +33,15 @@ unchanged data, so later captures upload only new repository content.
 - Restores file additions, modifications, deletions, type changes, ownership,
   modes, ACLs, xattrs, capabilities, hard links, sparse files, and unusual names.
 - Preserves package changes, users and groups, cron, SSH authorized keys,
-  `/etc/hosts`, and other configured mixed-ownership files.
+  `/etc/hosts` (including its active cloud-init template), and other configured
+  mixed-ownership files.
 - Restores systemd service, socket, timer, path, mount, and automount intent,
   including enabled, disabled, masked, active, and inactive state.
 - Captures ordinary database, language-runtime, web-server, and container state
   without workload-specific Wormhole code.
 - Restores guest firewall rules, portable sysctls, source-added kernel modules,
-  and SELinux Enforcing/Permissive changes.
+  and SELinux Enforcing/Permissive changes while leaving host-derived kernel
+  state target-owned.
 - Includes mounted persistent filesystems when the VM manager recreates and
   mounts compatible storage at the same path before restore.
 - Preserves the target hostname, machine ID, network configuration, routes, SSH
@@ -65,6 +67,9 @@ From a checkout:
 make build
 sudo install -m 0755 bin/wormhole bin/restic /usr/local/bin/
 ```
+
+On Linux, `make build` produces CGO-free static binaries so the same artifacts
+run on supported older and newer glibc-based images.
 
 Set repository credentials in a root-only environment. Wormhole creates the
 encrypted repository during the first baseline if it does not exist:
@@ -99,25 +104,23 @@ credentials, configuration, storage preparation, and manager integration, see
 ## Tested systems
 
 All completed cloud runs used Hetzner Cloud x86_64 VMs and S3-compatible object
-storage. “Current build” means the present `wormhole.18` compatibility stamp.
+storage. The matrix below covers the current `wormhole.18` development line.
 
 | OS | Completed coverage |
 | --- | --- |
-| Ubuntu 24.04 LTS | Current build: nginx, Python venv/package, Node/npm, compiled Go, PostgreSQL with live writer, SQLite, Docker image/container/volume/writable layer, ext4 volume, reboot, continued writes, recapture, and second fresh restore |
-| Fedora 44 | Current build: generic lifecycle plus SELinux Permissive→Enforcing, reboot, recapture, and second fresh restore |
-| Debian 12 | Earlier development build: generic lifecycle, continued-write validation, and recapture |
-| Rocky Linux 10 | Earlier development build: generic lifecycle, continued-write validation, and recapture |
-| AlmaLinux 10 | Earlier development build: generic lifecycle and attached XFS volume |
-| CentOS Stream 10 | Earlier development build: generic lifecycle |
-| openSUSE 16 | Earlier development build: generic lifecycle |
+| Ubuntu 22.04 LTS, 24.04 LTS, 26.04 | Three-VM lifecycle; Ubuntu 24.04 also passed the application, Docker, ext4-volume, corruption, lease, and forced-interruption profiles |
+| Debian 12, 13 | Three-VM generic lifecycle through second restore and reboot |
+| Fedora 43, 44 | Three-VM generic lifecycle; Fedora 44 also passed SELinux Permissive→Enforcing restoration |
+| AlmaLinux 8, 9, 10 | Three-VM generic lifecycle; AlmaLinux 10 also passed the XFS-volume profile |
+| Rocky Linux 8, 9, 10 | Three-VM generic lifecycle through second restore and reboot |
+| CentOS Stream 9, 10 | Three-VM generic lifecycle through second restore and reboot |
+| openSUSE 16 | Three-VM generic lifecycle with cloud-init `/etc/hosts` persistence across reboots |
 
-The dpkg/APT, RPM/DNF, and RPM/Zypper paths are implemented, but that does not
-make every release in those families qualified. Seven OS images have completed
-a cloud lifecycle; only Ubuntu 24.04 and Fedora 44 have completed it on the
-current build. Other releases, plus current-build reruns of the five earlier
-results, still need a completed matrix. See
+The final compatibility rerun used one identical static binary on AlmaLinux 8,
+Rocky Linux 8/9, and CentOS Stream 9. Qualification remains same-release: this
+matrix does not imply cross-distribution or cross-version restore support. See
 [Validation and tested systems](docs/testing.md) for exact scenarios and
-remaining coverage.
+remaining gaps.
 
 ## Important boundaries
 

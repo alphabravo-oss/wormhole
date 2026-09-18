@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -54,6 +56,9 @@ func TestGenericChangePlan(t *testing.T) {
 	}
 	if !isExcludedPath("/var/lib/plymouth/boot-duration", defaultExcludes) || !isExcludedPath("/var/lib/wtmpdb/wtmp.db", defaultExcludes) {
 		t.Fatal("volatile boot and login accounting state was not excluded")
+	}
+	if !isExcludedPath("/var/log/wtmp.db", defaultExcludes) || !isExcludedPath("/var/lib/lastlog/lastlog2.db", defaultExcludes) || !isExcludedPath("/var/lib/logrotate/status", defaultExcludes) || !isExcludedPath("/var/lib/chrony/example.nts", defaultExcludes) || !isExcludedPath("/var/spool/anacron/cron.daily", defaultExcludes) {
+		t.Fatal("volatile service state was not excluded")
 	}
 	if !isExcludedPath("/var/lib/unbound/root.key", defaultExcludes) {
 		t.Fatal("host-managed DNSSEC trust anchor was not excluded")
@@ -182,6 +187,59 @@ func TestOperationLockRejectsOverlap(t *testing.T) {
 	}
 }
 
+func TestResumeAcceptsPartialFirewallState(t *testing.T) {
+	baseline := FirewallState{Backend: "nft", Rules: "baseline"}
+	captured := FirewallState{Backend: "nft", Rules: "captured"}
+	partial := FirewallState{Backend: "nft", Rules: "partial"}
+	if err := validateTargetFirewall(baseline, captured, partial, false); err == nil {
+		t.Fatal("fresh restore accepted a partial firewall state")
+	}
+	if err := validateTargetFirewall(baseline, captured, partial, true); err != nil {
+		t.Fatalf("resume rejected its partial firewall state: %v", err)
+	}
+}
+
+func TestScheduleUserSliceThawAfterCallingUnitExits(t *testing.T) {
+	dir := t.TempDir()
+	systemctl := filepath.Join(dir, "systemctl")
+	logPath := filepath.Join(dir, "calls")
+	script := "#!/bin/sh\n" +
+		"printf '%s %s\\n' \"${0##*/}\" \"$*\" >>\"$WORMHOLE_SYSTEMCTL_LOG\"\n" +
+		"[ \"${0##*/}\" != systemctl ]\n"
+	if err := os.WriteFile(systemctl, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "systemd-run"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	t.Setenv("WORMHOLE_SYSTEMCTL_LOG", logPath)
+	if err := scheduleUserSliceThaw(context.Background(), "wormhole-test.service"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	want := fmt.Sprintf("systemd-run --quiet --collect --unit=wormhole-thaw-sessions-%d /bin/sh -c while state=$(systemctl show --property=ActiveState --value \"$1\" 2>/dev/null); do case \"$state\" in inactive|failed) break;; esac; sleep 1; done; systemctl thaw user.slice session-*.scope sh wormhole-test.service\n", os.Getpid())
+	if got != want {
+		t.Fatalf("unexpected systemctl calls: %q", got)
+	}
+}
+
+func TestCurrentSystemdUnit(t *testing.T) {
+	for input, want := range map[string]string{
+		"0::/system.slice/wormhole-baseline.service\n":                         "wormhole-baseline.service",
+		"0::/user.slice/user-1000.slice/user@1000.service/session-4.scope\n":   "session-4.scope",
+		"11:memory:/\n1:name=systemd:/system.slice/wormhole-capture.service\n": "wormhole-capture.service",
+	} {
+		if got := systemdUnit([]byte(input)); got != want {
+			t.Fatalf("systemd unit: want %q, got %q", want, got)
+		}
+	}
+}
+
 func TestCommitRestoredBaseline(t *testing.T) {
 	dir := t.TempDir()
 	baselinePath := filepath.Join(dir, "baseline.json")
@@ -215,6 +273,44 @@ func TestTextFileDeltaPreservesTargetAndMapsHostIdentity(t *testing.T) {
 	}
 	if !preserveTargetLine("/root/.ssh/authorized_keys", "ssh-ed25519 provider", source) || !preserveTargetLine("/etc/hosts", "10.0.0.1 old-host", source) {
 		t.Fatal("provider access or host identity line was not protected")
+	}
+}
+
+func TestCloudInitHostsTemplatePersistsReconciledLines(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hosts.suse.tmpl")
+	if err := os.WriteFile(path, []byte("127.0.0.1 {{fqdn}} {{hostname}}\n192.0.2.1 removed.test\n"), 0640); err != nil {
+		t.Fatal(err)
+	}
+	inactive := filepath.Join(dir, "hosts.debian.tmpl")
+	if err := os.WriteFile(inactive, []byte("inactive\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	hosts := []string{"# Changes persist in the master file " + path}
+	if got := cloudInitHostsTemplate(hosts, dir); got != path {
+		t.Fatalf("active hosts template: want %q, got %q", path, got)
+	}
+	if got := cloudInitHostsTemplate([]string{"# " + filepath.Join(dir, "hosts..", "escape.tmpl")}, dir); got != "" {
+		t.Fatalf("accepted hosts template outside its directory: %q", got)
+	}
+	change := TextFileChange{Path: "/etc/hosts", Added: []string{"192.0.2.123 course.test"}, Removed: []string{"192.0.2.1 removed.test"}}
+	for range 2 {
+		if err := applyCloudInitHostsTemplate(path, change, HostIdentity{}, HostIdentity{}, HostIdentity{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); got != "127.0.0.1 {{fqdn}} {{hostname}}\n192.0.2.123 course.test\n" {
+		t.Fatalf("unexpected persisted hosts template: %q", got)
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0640 {
+		t.Fatalf("template metadata changed: %v, %v", info, err)
+	}
+	if data, err := os.ReadFile(inactive); err != nil || string(data) != "inactive\n" {
+		t.Fatalf("inactive template changed: %q, %v", data, err)
 	}
 }
 
@@ -297,11 +393,15 @@ func TestSysctlDeltaIsPortable(t *testing.T) {
 		t.Fatal("portable sysctl was rejected")
 	}
 	if portableSysctl("kernel/hostname") || portableSysctl("net/ipv4/conf/eth0/rp_filter") ||
-		portableSysctl("net/ipv4/tcp_fastopen_key") || portableSysctl("vm/user_reserve_kbytes") {
+		portableSysctl("net/ipv4/tcp_fastopen_key") || portableSysctl("kernel/sched_domain/cpu0/domain0/max_newidle_lb_cost") ||
+		portableSysctl("kernel/threads-max") || portableSysctl("net/ipv4/tcp_rmem") || portableSysctl("user/max_net_namespaces") || portableSysctl("vm/user_reserve_kbytes") {
 		t.Fatal("machine-specific sysctl was accepted")
 	}
 	if err := validateSysctlChanges(changes[:1], map[string]string{changes[0].Name: changes[0].Before}); err != nil {
 		t.Fatal(err)
+	}
+	if err := validateSysctlChanges(changes[:1], map[string]string{changes[0].Name: "target-default"}); err != nil {
+		t.Fatalf("portable target default was rejected: %v", err)
 	}
 }
 
