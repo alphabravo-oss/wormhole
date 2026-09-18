@@ -18,7 +18,19 @@ state.
 The source and target must have the same OS release, architecture, base state,
 Wormhole configuration, and exact running kernel release.
 
-## Build and install
+## Install
+
+Install the x86_64 Linux alpha release and its pinned Restic engine:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alphabravo-oss/wormhole/v0.1.0-alpha.1/scripts/get-wormhole | bash
+wormhole version
+```
+
+The installer verifies the release checksum before installing either binary.
+It uses `sudo` only for the final write to `/usr/local/bin` when needed.
+
+## Build from source
 
 Build the Wormhole binary and its pinned Restic engine together:
 

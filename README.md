@@ -56,10 +56,29 @@ The detailed state and transaction model is in [plan.md](plan.md).
 
 ## Quick install
 
-Requirements: a systemd-based Linux VM, root access, Go 1.25.10 or newer for
-the pinned Restic build, and an S3-compatible repository or another Restic
-backend. Source and target must use the same OS release, architecture, base
-state, and exact running kernel.
+Requirements: a systemd-based x86_64 Linux VM, root access, and an S3-compatible
+repository or another Restic backend. Source and target must use the same OS
+release, architecture, base state, and exact running kernel.
+
+Install the alpha release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alphabravo-oss/wormhole/v0.1.0-alpha.1/scripts/get-wormhole | bash
+```
+
+The installer downloads the Wormhole and pinned Restic static binaries, verifies
+their release archive against `SHA256SUMS`, and uses `sudo` only when installing
+to `/usr/local/bin` requires it.
+
+To inspect the installer before running it:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/alphabravo-oss/wormhole/v0.1.0-alpha.1/scripts/get-wormhole
+less get-wormhole
+bash get-wormhole
+```
+
+Building from a checkout requires Go 1.25.10 or newer:
 
 From a checkout:
 
@@ -144,4 +163,5 @@ before relying on a recovery.
   destructive scenarios, and how to run the suites.
 - [Design and implementation plan](plan.md) — state model, capture/restore
   transactions, engine changes, and release criteria.
+- [Apache License 2.0](LICENSE) — Wormhole's license.
 - [Third-party notices](THIRD_PARTY_NOTICES.md) — Restic attribution and license.

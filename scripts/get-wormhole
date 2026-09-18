@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+version=${WORMHOLE_VERSION:-v0.1.0-alpha.1}
+install_dir=${WORMHOLE_INSTALL_DIR:-/usr/local/bin}
+
+if [[ ! $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+  echo "Invalid WORMHOLE_VERSION: $version" >&2
+  exit 1
+fi
+if [[ $(uname -s) != Linux || $(uname -m) != x86_64 ]]; then
+  echo "Wormhole currently supports Linux x86_64 only." >&2
+  exit 1
+fi
+for command in curl grep install mktemp sha256sum tar; do
+  command -v "$command" >/dev/null || { echo "Required command not found: $command" >&2; exit 1; }
+done
+
+archive="wormhole_${version#v}_linux_amd64.tar.gz"
+base_url=${WORMHOLE_BASE_URL:-"https://github.com/alphabravo-oss/wormhole/releases/download/$version"}
+work_dir=$(mktemp -d)
+trap 'rm -rf "$work_dir"' EXIT
+
+curl -fsSL "$base_url/$archive" -o "$work_dir/$archive"
+curl -fsSL "$base_url/SHA256SUMS" -o "$work_dir/SHA256SUMS"
+(
+  cd "$work_dir"
+  grep -E "^[[:xdigit:]]{64}  $archive$" SHA256SUMS | sha256sum -c -
+)
+tar -xzf "$work_dir/$archive" -C "$work_dir" wormhole restic
+
+privilege=()
+if (( EUID != 0 )) && ! { [[ -d $install_dir && -w $install_dir ]] || [[ ! -e $install_dir && -w $(dirname "$install_dir") ]]; }; then
+  command -v sudo >/dev/null || { echo "Cannot write to $install_dir and sudo is unavailable." >&2; exit 1; }
+  privilege=(sudo)
+fi
+"${privilege[@]}" install -d "$install_dir"
+"${privilege[@]}" install -m 0755 "$work_dir/wormhole" "$work_dir/restic" "$install_dir/"
+
+echo "Installed Wormhole $("$install_dir/wormhole" version) to $install_dir"

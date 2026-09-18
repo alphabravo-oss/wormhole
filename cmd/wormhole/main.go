@@ -12,7 +12,7 @@ import (
 	"syscall"
 )
 
-const version = "0.1.0-dev"
+const version = "0.1.0-alpha.1"
 
 type commonFlags struct {
 	stateDir    string

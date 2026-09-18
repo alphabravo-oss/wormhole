@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25.10"
+          cache: false
+      - name: Test and build
+        run: make test build
+      - name: Package and verify installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=${GITHUB_REF_NAME#v}
+          test "$(bin/wormhole version)" = "$version"
+          archive="wormhole_${version}_linux_amd64.tar.gz"
+          mkdir -p dist/package
+          install -m 0755 bin/wormhole bin/restic dist/package/
+          install -m 0644 LICENSE THIRD_PARTY_NOTICES.md dist/package/
+          tar -C dist/package -czf "dist/$archive" wormhole restic LICENSE THIRD_PARTY_NOTICES.md
+          (cd dist && sha256sum "$archive" > SHA256SUMS)
+          WORMHOLE_BASE_URL="file://$PWD/dist" WORMHOLE_INSTALL_DIR="$PWD/dist/installed" bash scripts/get-wormhole
+          test "$(dist/installed/wormhole version)" = "$version"
+          install -m 0755 scripts/get-wormhole dist/install.sh
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/wormhole_${GITHUB_REF_NAME#v}_linux_amd64.tar.gz" \
+            dist/SHA256SUMS dist/install.sh \
+            --verify-tag --prerelease --latest=false --generate-notes \
+            --title "Wormhole $GITHUB_REF_NAME"
